@@ -1,2 +1,1 @@
 # OPTOVR
-Optocinétique WebVR
