@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>V12 - MàJ A-Frame & Lissage</title>
+    <meta name="description" content="Version 12 - Mise à jour d'A-Frame en v1.5.0 et augmentation du lissage pour un arrêt plus doux.">
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <style>
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            z-index: 10;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            text-align: center;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            justify-content: center;
+        }
+        #controls div {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #controls label {
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+        #controls span {
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        a-scene[vr-mode-ui] #controls {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <div>
+            <label for="density-slider">Densité des sphères : </label>
+            <input type="range" id="density-slider" min="50" max="300" value="100">
+            <span id="density-value">100</span>
+        </div>
+        <div>
+            <label>Vitesse Horizontale :</label>
+            <span id="horizontal-speed-value">0.0</span> deg/s
+        </div>
+        <div>
+            <label>Vitesse Verticale :</label>
+            <span id="vertical-speed-value">0.0</span> deg/s
+        </div>
+    </div>
+
+    <a-scene>
+        <a-sky color="#000000"></a-sky>
+        <a-entity id="spheres"></a-entity>
+        <a-entity id="rig" position="0 0 0">
+            <a-camera look-controls-enabled="true" wasd-controls-enabled="false"></a-camera>
+            <a-entity oculus-touch-controls="hand: left"></a-entity>
+            <a-entity oculus-touch-controls="hand: right"></a-entity>
+            <a-entity vive-controls="hand: left"></a-entity>
+            <a-entity vive-controls="hand: right"></a-entity>
+        </a-entity>
+    </a-scene>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const spheresContainer = document.getElementById('spheres');
+            const densitySlider = document.getElementById('density-slider');
+            const densityValue = document.getElementById('density-value');
+            const horizontalSpeedValue = document.getElementById('horizontal-speed-value');
+            const verticalSpeedValue = document.getElementById('vertical-speed-value');
+            const rigEl = document.getElementById('rig');
+            const cameraEl = document.querySelector('a-camera');
+            const sceneEl = document.querySelector('a-scene');
+
+            const radius = 50;
+            const phi = Math.PI * (3 - Math.sqrt(5));
+            const dispersionFactor = 8;
+
+            const baseSphereRadius = 0.8;
+            const minRandomRadius = baseSphereRadius * 0.5;
+            const maxRandomRadius = baseSphereRadius * 2.0;
+
+            let targetSpeedX = 0;
+            let targetSpeedY = 0;
+
+            let actualSpeedX = 0;
+            let actualSpeedY = 0;
+
+            const speedIncrement = 1;
+            // MODIFICATION: Diminution du facteur pour un arrêt plus lent (plus de lissage)
+            const smoothingFactor = 1.5; 
+
+            let lastFrameTime = performance.now();
+
+            let rotationAxisX = new THREE.Vector3(1, 0, 0);
+            let rotationAxisY = new THREE.Vector3(0, 1, 0);
+
+            function updateRotationAxes() {
+                const camera = cameraEl.object3D;
+                if (!camera) return;
+
+                rigEl.object3D.quaternion.identity();
+
+                const cameraDirection = new THREE.Vector3();
+                camera.getWorldDirection(cameraDirection);
+
+                rotationAxisY.set(0, 1, 0);
+                rotationAxisX.crossVectors(cameraDirection, rotationAxisY).normalize();
+                
+                console.log('Axes et rotation du joueur réinitialisés.');
+            }
+
+            function generateSpheres(numberOfSpheres) {
+                while (spheresContainer.firstChild) {
+                    spheresContainer.removeChild(spheresContainer.firstChild);
+                }
+
+                for (let i = 0; i < numberOfSpheres; i++) {
+                    const y = 1 - (i / (numberOfSpheres - 1)) * 2;
+                    const radiusAtY = Math.sqrt(1 - y * y);
+                    const theta = phi * i;
+                    let x = Math.cos(theta) * radiusAtY;
+                    let z = Math.sin(theta) * radiusAtY;
+
+                    const offsetX = (Math.random() - 0.5) * dispersionFactor;
+                    const offsetY = (Math.random() - 0.5) * dispersionFactor;
+                    const offsetZ = (Math.random() - 0.5) * dispersionFactor;
+
+                    const randomSphereRadius = minRandomRadius + (Math.random() * (maxRandomRadius - minRandomRadius));
+
+                    const sphereGroup = document.createElement('a-entity');
+                    sphereGroup.setAttribute('position', `${x * radius + offsetX} ${y * radius + offsetY} ${z * radius + offsetZ}`);
+
+                    const mainSphere = document.createElement('a-sphere');
+                    mainSphere.setAttribute('radius', randomSphereRadius);
+                    mainSphere.setAttribute('color', '#FFFFFF');
+                    mainSphere.setAttribute('material', { shader: 'standard', emissive: '#FFFFFF', emissiveIntensity: 0.3 });
+                    sphereGroup.appendChild(mainSphere);
+
+                    const haloSphere = document.createElement('a-sphere');
+                    haloSphere.setAttribute('radius', randomSphereRadius * 1.2);
+                    haloSphere.setAttribute('material', { shader: 'standard', color: '#FFFFFF', emissive: '#FFFFFF', emissiveIntensity: 1.0, opacity: 0.1, transparent: true, side: 'back' });
+                    sphereGroup.appendChild(haloSphere);
+
+                    spheresContainer.appendChild(sphereGroup);
+                }
+            }
+
+            function animate(currentTime) {
+                const deltaTime = (currentTime - lastFrameTime) / 1000;
+                lastFrameTime = currentTime;
+
+                actualSpeedX += (targetSpeedX - actualSpeedX) * (1 - Math.exp(-deltaTime * smoothingFactor));
+                actualSpeedY += (targetSpeedY - actualSpeedY) * (1 - Math.exp(-deltaTime * smoothingFactor));
+
+                const rigObject3D = rigEl.object3D;
+
+                if (Math.abs(actualSpeedX) > 0.01) {
+                    const radX = THREE.MathUtils.degToRad(actualSpeedX * deltaTime);
+                    const deltaRotationX = new THREE.Quaternion().setFromAxisAngle(rotationAxisX, radX);
+                    rigObject3D.quaternion.premultiply(deltaRotationX);
+                    rotationAxisY.applyQuaternion(deltaRotationX);
+                }
+                if (Math.abs(actualSpeedY) > 0.01) {
+                    const radY = THREE.MathUtils.degToRad(actualSpeedY * deltaTime);
+                    const deltaRotationY = new THREE.Quaternion().setFromAxisAngle(rotationAxisY, radY);
+                    rigObject3D.quaternion.premultiply(deltaRotationY);
+                    rotationAxisX.applyQuaternion(deltaRotationY);
+                }
+
+                horizontalSpeedValue.textContent = actualSpeedY.toFixed(1);
+                verticalSpeedValue.textContent = actualSpeedX.toFixed(1);
+
+                requestAnimationFrame(animate);
+            }
+
+            densitySlider.addEventListener('input', (event) => {
+                const newDensity = event.target.value;
+                densityValue.textContent = newDensity;
+                generateSpheres(newDensity);
+                updateRotationAxes();
+            });
+
+            document.addEventListener('keydown', (e) => {
+                switch (e.key.toLowerCase()) {
+                    case 'arrowup': targetSpeedX += speedIncrement; break;
+                    case 'arrowdown': targetSpeedX -= speedIncrement; break;
+                    case 'arrowleft': targetSpeedY -= speedIncrement; break;
+                    case 'arrowright': targetSpeedY += speedIncrement; break;
+                    case ' ': targetSpeedX = 0; targetSpeedY = 0; break;
+                    case 'r': updateRotationAxes(); break;
+                }
+            });
+
+            sceneEl.addEventListener('enter-vr', () => {
+                console.log("Entrée en mode VR, réinitialisation des axes.");
+                updateRotationAxes();
+            });
+
+            generateSpheres(densitySlider.value);
+            
+            if (cameraEl.hasLoaded) {
+                updateRotationAxes();
+            } else {
+                cameraEl.addEventListener('loaded', () => {
+                    console.log("Caméra chargée, initialisation des axes.");
+                    updateRotationAxes();
+                });
+            }
+
+            requestAnimationFrame(animate);
+        });
+    </script>
+</body>
+</html>
